@@ -7,6 +7,7 @@
 
 """
 Converts lcov line coverage output to Cobertura-compatible XML for CI
+https://raw.githubusercontent.com/eriwen/lcov-to-cobertura-xml/master/lcov_cobertura/lcov_cobertura.py
 """
 
 import re
@@ -14,8 +15,9 @@ import sys
 import os
 import time
 import subprocess
+import argparse
+
 from xml.dom import minidom
-from optparse import OptionParser
 
 from distutils.spawn import find_executable
 
@@ -121,10 +123,6 @@ class LcovCobertura(object):
                     file_dict['methods'] = dict(file_methods)
                     file_dict['branches-total'] = file_branches_total
                     file_dict['branches-covered'] = file_branches_covered
-                    coverage_data['summary']['lines-total'] += file_lines_total
-                    coverage_data['summary']['lines-covered'] += file_lines_covered
-                    coverage_data['summary']['branches-total'] += file_branches_total
-                    coverage_data['summary']['branches-covered'] += file_branches_covered
 
             line_parts = line.split(':', 1)
             input_type = line_parts[0]
@@ -215,6 +213,11 @@ class LcovCobertura(object):
             package_data['branch-rate'] = self._percent(
                 package_data['branches-total'],
                 package_data['branches-covered'])
+                
+            coverage_data['summary']['lines-total'] += package_data['lines-total']
+            coverage_data['summary']['lines-covered'] += package_data['lines-covered']
+            coverage_data['summary']['branches-total'] += package_data['branches-total']
+            coverage_data['summary']['branches-covered'] += package_data['branches-covered']
 
         return coverage_data
 
@@ -375,40 +378,42 @@ def main(argv=None):
     """
     if argv is None:
         argv = sys.argv
-    parser = OptionParser()
+
+    parser = argparse.ArgumentParser()
     parser.usage = ('lcov_cobertura.py lcov-file.dat [-b source/dir] '
                     '[-e <exclude packages regex>] [-o output.xml] [-d]')
     parser.description = 'Converts lcov output to cobertura-compatible XML'
-    parser.add_option('-b', '--base-dir', action='store',
+    parser.add_argument("input_file", help="lcov file to read")
+    parser.add_argument('-b', '--base-dir', action='store',
                       help='Directory where source files are located',
                       dest='base_dir', default='.')
-    parser.add_option('-e', '--excludes',
+    parser.add_argument('-e', '--excludes',
                       help='Comma-separated list of regexes of packages to exclude',
                       action='append', dest='excludes', default=[])
-    parser.add_option('-o', '--output',
+    parser.add_argument('-o', '--output',
                       help='Path to store cobertura xml file',
                       action='store', dest='output', default='coverage.xml')
-    parser.add_option('-d', '--demangle',
+    parser.add_argument('-d', '--demangle',
                       help='Demangle C++ function names using %s' % CPPFILT,
                       action='store_true', dest='demangle', default=False)
-    (options, args) = parser.parse_args(args=argv)
+    options = parser.parse_args()
 
     if options.demangle and not HAVE_CPPFILT:
         raise RuntimeError("C++ filter executable (%s) not found!" % CPPFILT)
 
-    if len(args) != 2:
-        print(main.__doc__)
-        sys.exit(1)
+    # if len(args) != 2:
+    #     print(main.__doc__)
+    #     sys.exit(1)
 
     try:
-        with open(args[1], 'r') as lcov_file:
+        with open(options.input_file, 'r') as lcov_file:
             lcov_data = lcov_file.read()
             lcov_cobertura = LcovCobertura(lcov_data, options.base_dir, options.excludes, options.demangle)
             cobertura_xml = lcov_cobertura.convert()
         with open(options.output, mode='wt') as output_file:
             output_file.write(cobertura_xml)
     except IOError:
-        sys.stderr.write("Unable to convert %s to Cobertura XML" % args[1])
+        sys.stderr.write("Unable to convert %s to Cobertura XML" % options.input_file)
 
 if __name__ == '__main__':
     main()
